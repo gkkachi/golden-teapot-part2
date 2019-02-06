@@ -215,8 +215,16 @@ function getIndicese(length) {
 
   return arr;
 }
+},{}],"assets/images/theta360me.jpg":[function(require,module,exports) {
+module.exports = "/theta360me.0da67ed4.jpg";
 },{}],"index.ts":[function(require,module,exports) {
 "use strict";
+
+var __importDefault = this && this.__importDefault || function (mod) {
+  return mod && mod.__esModule ? mod : {
+    "default": mod
+  };
+};
 
 Object.defineProperty(exports, "__esModule", {
   value: true
@@ -225,6 +233,8 @@ Object.defineProperty(exports, "__esModule", {
 var MyObject_1 = require("./MyObject");
 
 var hexagon_1 = require("./hexagon");
+
+var theta360me_jpg_1 = __importDefault(require("./assets/images/theta360me.jpg"));
 
 var gl;
 
@@ -241,9 +251,14 @@ window.onload = function () {
   }
 
   gl = _gl;
+
+  if (!gl.getExtension("OES_standard_derivatives")) {
+    alert("ERROR: Extension 'OES_standard_derivatives' was not found");
+  }
+
   glInit(width, height);
-  var vs = "\n    attribute vec2 xy;\n    varying float r;\n    void main(void) {\n        gl_Position = vec4(xy, 0.0, 1.0);\n        r = sqrt(max(1.0 - dot(xy, xy), 0.0));\n    }";
-  var fs = "precision mediump float;\n    varying float r;\n    void main(void) {\n        gl_FragColor = vec4(vec3(1.0, 1.0, 1.0) * r, 1.0);\n    }";
+  var vs = "\n    #define M_PI_INV 0.3183098861837907\n    #define M_PI_INV_HALF 0.15915494309189535\n\n    attribute vec2 xy;\n    varying float u1, u2, v, r;\n\n    void main(void) {\n      float z2 = 1.0 - dot(xy, xy);\n      float mask = step(0.0, z2);\n      float z = sqrt(z2 * mask);\n      vec3 normal = vec3(xy, z);\n      vec3 view = vec3(0.0, 0.0, 1.0);\n      vec3 light = normal * (2.0 * z) - view;\n      v = acos(light.y) * M_PI_INV;\n      u1 = atan(light.x, light.z) * M_PI_INV_HALF;\n      if(u1 > 0.0) {\n        u2 = u1;\n      } else {\n        u2 = u1 + 1.0;\n      }\n      gl_Position = vec4(xy, 0.0, 1.0);\n      r = mask;\n    }";
+  var fs = "#extension GL_OES_standard_derivatives : enable\n    precision mediump float;\n    uniform sampler2D texture;\n    varying float u1, u2, v, r;\n\n    void main(void) {\n      float u;\n      if(fwidth(u1) <= fwidth(u2)) {\n        u = u1;\n      } else {\n        u = u2;\n      }\n      vec2 uv = vec2(u, v);\n      vec4 smpColor = texture2D(texture, uv);\n      vec3 vColor = smpColor.xyz * r;\n      gl_FragColor = vec4(vColor, 1.0);\n  }";
 
   var _program = create_program(vs, fs);
 
@@ -253,8 +268,8 @@ window.onload = function () {
   }
 
   var program = _program;
-  var location = gl.getAttribLocation(program, "xy");
-  gl.enableVertexAttribArray(location);
+  var location_xy = gl.getAttribLocation(program, "xy");
+  gl.enableVertexAttribArray(location_xy);
   var hexagon = hexagon_1.getHexagon(16);
 
   var _buff = MyObject_1.getBuffers(gl, hexagon);
@@ -267,9 +282,14 @@ window.onload = function () {
   var buff = _buff;
   gl.bindBuffer(gl.ARRAY_BUFFER, buff.vbo);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buff.ibo);
-  gl.vertexAttribPointer(location, 2, gl.FLOAT, false, 0, 0);
-  gl.drawElements(gl.TRIANGLES, buff.count, gl.UNSIGNED_SHORT, 0);
-  gl.flush();
+  gl.vertexAttribPointer(location_xy, 2, gl.FLOAT, false, 0, 0);
+  var location_t = gl.getUniformLocation(program, "texture");
+  var updateTexture = init_texture(location_t);
+  updateTexture(theta360me_jpg_1.default);
+  setInterval(function () {
+    gl.drawElements(gl.TRIANGLES, buff.count, gl.UNSIGNED_SHORT, 0);
+    gl.flush();
+  }, 1000);
   console.log("DONE.");
 };
 
@@ -318,7 +338,41 @@ function create_shader(code, shader_type) {
     return null;
   }
 }
-},{"./MyObject":"MyObject.ts","./hexagon":"hexagon.ts"}],"../node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
+
+function init_texture(location) {
+  var texture = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, texture); // Because images have to be download over the internet
+  // they might take a moment until they are ready.
+  // Until then put a single pixel in the texture so we can
+  // use it immediately. When the image has finished downloading
+  // we'll update the texture with the contents of the image.
+
+  var level = 0;
+  var internalFormat = gl.RGB;
+  var width = 1;
+  var height = 1;
+  var border = 0;
+  var srcFormat = internalFormat;
+  var srcType = gl.UNSIGNED_BYTE;
+  var pixel = new Uint8Array([0, 0, 255]); // opaque blue
+
+  gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, width, height, border, srcFormat, srcType, pixel);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.uniform1i(location, 0);
+  return function (imgSrc) {
+    var img = new Image();
+
+    img.onload = function () {
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, srcFormat, srcType, img);
+    };
+
+    img.src = imgSrc;
+  };
+}
+},{"./MyObject":"MyObject.ts","./hexagon":"hexagon.ts","./assets/images/theta360me.jpg":"assets/images/theta360me.jpg"}],"../node_modules/parcel-bundler/src/builtins/hmr-runtime.js":[function(require,module,exports) {
 var global = arguments[3];
 var OVERLAY_ID = '__parcel__error__overlay__';
 var OldModule = module.bundle.Module;
@@ -345,7 +399,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "34047" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "46731" + '/');
 
   ws.onmessage = function (event) {
     var data = JSON.parse(event.data);
